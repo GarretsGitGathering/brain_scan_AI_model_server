@@ -3,3 +3,5 @@ pillow
 numpy
 flask
 tensorflow
+jax
+torch
