@@ -1,7 +1,7 @@
 from keras import layers # High-level neural netwrok api
 from keras.applications import DenseNet121
 from keras.models import Sequential
-from keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam
 from PIL import Image
 import numpy as np
 
