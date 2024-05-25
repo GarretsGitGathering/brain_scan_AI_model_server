@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from PIL import Image
 import io # library for handling binary data
+import base64
 
 from engine import predict, create_model, train_model
 
@@ -14,22 +15,35 @@ def waahtever():
     return "empty page"
 
 @app.route('/analyze', methods=['POST'])
-def analyze():                                     # THE BOTTOM PART OF OUR HTTP REQUEST:   {'file': ***ENCODED IMAGE***}
-    #check if a file is in the request
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    
-    # grabbing the file from the POST request received from our server
-    file = request.files['file']
+def analyze():
+    # Check if JSON data is present in the request
+    if not request.is_json:
+        return jsonify({'error': 'No JSON data received'}), 400
 
-    if file:
-        # open the image after converting from a byte array to an image object
-        image = Image.open(io.BytesIO(file.read()))
+    # Get JSON data from the request
+    json_data = request.get_json()
 
-        #create the prediction with the model
+    # Check if 'file' key is present in the JSON data
+    if 'file' not in json_data:
+        return jsonify({'error': 'No file key in JSON data'}), 400
+
+    # Get the base64 encoded image data from the 'file' key
+    base64_encoded_image = json_data['file']
+
+    try:
+        # Decode the base64 encoded image data
+        image_data = base64.b64decode(base64_encoded_image)
+
+        # Convert the image data into an Image object
+        image = Image.open(io.BytesIO(image_data))
+
+        # Perform prediction with the model using the image
         prediction = predict(model, image)
 
+        # Return the prediction as JSON response
         return jsonify(prediction)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
     
 @app.route('/train', methods=['POST'])
 def train():
