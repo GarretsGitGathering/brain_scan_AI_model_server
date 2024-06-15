@@ -5,3 +5,4 @@ flask
 tensorflow
 jax
 torch
+pandas
