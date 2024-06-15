@@ -5,6 +5,8 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, i
 from tensorflow.keras.applications.densenet import preprocess_input
 from PIL import Image
 import numpy as np
+import pandas as pd
+import os
 
 # Load DenseNet121 without the top layers, with pre-trained weights
 densenet = DenseNet121(
@@ -86,30 +88,93 @@ if __name__ == "__main__":
     # Load an example image for prediction
     image_path = "ID_0005db660.png"
     image = Image.open(image_path)
-    
+
+    # Path to the CSV and image folder
+    csv_file = 'dataset/stage_1_train.csv'
+    image_folder = 'dataset/stage_1_train_images'
+
+    # Read the CSV file
+    df = pd.read_csv(csv_file)
+
+    # Extract unique IDs and labels
+    df['image_id'] = df['ID'].apply(lambda x: x.split('_')[1])
+    df['label'] = df['ID'].apply(lambda x: x.split('_')[2])
+
+    # Pivot table to reshape the dataframe
+    df_pivot = df.pivot_table(index='image_id', columns='label', values='Label', aggfunc='first').reset_index()
+
+    # Create the 'filepath' column
+    df_pivot['filepath'] = df_pivot['image_id'].apply(lambda x: os.path.join(image_folder, f"ID_{x}.png"))
+
+    # Validate image files
+    def validate_image(filepath):
+        try:
+            with Image.open(filepath) as img:
+                img.verify()  # Verify that it is an image
+            return True
+        except (IOError, SyntaxError):
+            return False
+
+    df_pivot['valid_image'] = df_pivot['filepath'].apply(validate_image)
+    df_pivot = df_pivot[df_pivot['valid_image']]
+
+    # Debugging: Check the first few file paths
+    print(df_pivot['filepath'].head())
+
+    # Ensure the 'filepath' column is created and the files exist
+    df_pivot['filepath'] = df_pivot['filepath'].apply(lambda x: x if os.path.exists(x) else None)
+
+    # Debugging: Count the number of valid file paths
+    print(f"Number of valid file paths: {df_pivot['filepath'].notna().sum()}")
+
+    df_pivot = df_pivot.dropna(subset=['filepath'])
+
+    # Ensure the label columns are of type int
+    for label in ['any', 'epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural']:
+        df_pivot[label] = df_pivot[label].astype(int)
+
+    # Ensure the 'filepath' column is created
+    if 'filepath' not in df_pivot.columns:
+        raise KeyError("The 'filepath' column was not created correctly")
+
+    # Prepare training data (example using ImageDataGenerator)
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        validation_split=0.2  # Split for validation data
+    )
+
+    train_data = train_datagen.flow_from_dataframe(
+        dataframe=df_pivot,
+        x_col='filepath',
+        y_col=['any', 'epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural'],
+        target_size=(128, 128),
+        batch_size=32,
+        class_mode='raw',  # Using 'raw' for multi-label classification
+        subset='training'
+    )
+
+    validation_data = train_datagen.flow_from_dataframe(
+        dataframe=df_pivot,
+        x_col='filepath',
+        y_col=['any', 'epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural'],
+        target_size=(128, 128),
+        batch_size=32,
+        class_mode='raw',
+        subset='validation'
+    )
+
     # Create the model
     model = create_model()
     model.summary()
-    
+
     # Load model weights if they exist
     try:
         model.load_weights('model.h5')
     except OSError:
         print("Model weights not found. Training from scratch.")
     
-    # Prepare training data (example using ImageDataGenerator)
-    train_datagen = ImageDataGenerator(rescale=0.255)
-    
-    # Uncomment and set the path to your training data
-    # train_data = train_datagen.flow_from_directory(
-    #     'path_to_train_data',
-    #     target_size=(128, 128),
-    #     batch_size=32,
-    #     class_mode='categorical'
-    # )
-    
     # Uncomment to train the model
-    # train_model(model, train_data)
+    train_model(model, train_data)
     
     # Predict with the model
     prediction = predict(model, image)
